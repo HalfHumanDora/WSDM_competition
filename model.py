@@ -57,23 +57,28 @@ class LSTM_Classifier(nn.Module):
         embeds1_en = self.word_embeddings_en(title1_en)
         embeds2_en = self.word_embeddings_en(title2_en)
 
-        en_sum = embeds1_en + embeds2_en
-
-        embeds1_zh = self.word_embeddings_en(title1_zh)
-        embeds2_zh = self.word_embeddings_en(title2_zh)
-
-        zh_sum = embeds1_zh + embeds2_zh
-
-        #print("embedding size:",embeds1.size(), len(sentence1))
+        embeds1_zh = self.word_embeddings_zh(title1_zh)
+        embeds2_zh = self.word_embeddings_zh(title2_zh)
 
         # seq_length * batch * feature_dims
-        en_sum = en_sum.view(self.seq_length_en, batch, self.embedding_dim)
-        zh_sum = zh_sum.view(self.seq_length_zh, batch, self.embedding_dim)
+        embeds1_en = embeds1_en.view(self.seq_length_en, batch, self.embedding_dim)
+        embeds2_en = embeds2_en.view(self.seq_length_en, batch, self.embedding_dim)
 
-        lstm_out_en, self.hidden = self.lstm_en(en_sum)#, self.initial_hidden)
-        lstm_out_zh, self.hidden = self.lstm_zh(zh_sum)
+        embeds1_zh = embeds1_zh.view(self.seq_length_zh, batch, self.embedding_dim)
+        embeds2_zh = embeds2_zh.view(self.seq_length_zh, batch, self.embedding_dim)
 
-        concat = torch.cat((lstm_out_en[-1],  lstm_out_zh[-1]), dim=1)
+        #print("embeds1_en", embeds1_en.size())
+
+        lstm_out1_en, self.hidden = self.lstm_en(embeds1_en)#, self.initial_hidden)
+        lstm_out2_en, self.hidden = self.lstm_en(embeds2_en)
+        lstm_out1_zh, self.hidden = self.lstm_zh(embeds1_zh)
+        lstm_out2_zh, self.hidden = self.lstm_zh(embeds1_zh)
+
+        en_sum = lstm_out1_en[-1] + lstm_out2_en[-1]
+        zh_sum = lstm_out1_zh[-1] + lstm_out2_zh[-1]
+        #print("embedding size:",en_sum.size(), zh_sum.size())
+
+        concat = torch.cat((en_sum, zh_sum), dim=1)
         #print("lstm out:", lstm_out1[-1].size())
         #print("concat:", concat.size())
 

@@ -253,6 +253,7 @@ def preprocess_():
 
     id1_train, id1_val, train1_en, val1_en, train1_zh, val1_zh, id2_train, id2_val, train2_en, val2_en,train2_zh, val2_zh, y_train, y_val = train_test_split(id1, title1_en, title1_zh, id2, title2_en, title2_zh, labels, test_size=0.2, random_state=0)
 
+
     new_data_en = make_new_data(id1_train, id2_train, train1_en, train2_en, y_train)
     print(len(new_data_en))
     for text1, text2, label in new_data_en:
@@ -271,4 +272,4 @@ def preprocess_():
     print("training data:{}, validation data:{}".format(len(y_train), len(y_val)))
 
 
-    return (id1_train, id1_val, train1_en, val1_en, train1_zh, val1_zh, id2_train, id2_val, train2_en, val2_en,train2_zh, val2_zh, y_train, y_val), word_to_ix_en, word_to_ix_zh
+    return (id1_train, id1_val, train1_en, val1_en, train1_zh, val1_zh, id2_train, id2_val, train2_en, val2_en,train2_zh, val2_zh, y_train, y_val), word_to_ix_en, word_to_ix_zh, test_df

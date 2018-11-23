@@ -57,6 +57,7 @@ class Toidx(object):
     def __call__(self, sample, word_to_idx_en, word_to_idx_zh, max_seq_length_en, max_seq_length_zh):
 
         def prepare_sequence(seq, to_ix, max_seq_length):
+            seq = str(seq)
             #zero padding and word--->ix in seq.
             idxs = [to_ix[w] for w in seq.split()]
             if len(idxs) > max_seq_length:
