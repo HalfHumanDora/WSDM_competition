@@ -8,125 +8,138 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
-from torch.utils.data.sampler import Sampler
+from pytorch_pretrained_bert import BertTokenizer, BertModel, BertForMaskedLM
 
 from sklearn.model_selection import train_test_split
 
 import re
-import os
-import pickle
 
 from nltk.corpus import stopwords
 import nltk
+#nltk.download('stopwords')
 
-from model import *
-from dataset import TitleDataset, Toidx
-from preprocess import preprocess_, make_new_data
-
+# from model import BERT_Classifier
+from dataset import *
+from collections import defaultdict
 from sklearn.model_selection import KFold
+
+
+class BERT_Classifier(nn.Module):
+    def __init__(self, bert_model, target_size=3):
+        super(BERT_Classifier, self).__init__()
+
+        self.bert_model = bert_model
+        self.fc1 = nn.Linear(768, 768)
+        self.fc1_bn = nn.BatchNorm1d(768)
+        self.fc1_drop = nn.Dropout(p=0.3, inplace=False)
+        self.fc2 = nn.Linear(768, target_size)
+
+    def forward(self, last_encoder_layer):#, input_ids, input_mask):
+        batch = len(input_ids)
+
+        #last_encoder_layer, _ = self.bert_model(input_ids, token_type_ids=None, attention_mask=input_mask, output_all_encoded_layers=False)
+
+
+        #print(last_encoder_layer.size())
+        embedding = torch.sum(last_encoder_layer, 1)
+        #print("embedding", embedding.size())
+
+        fc1 = self.fc1_drop(F.relu(self.fc1_bn(self.fc1(embedding))))
+        fc2 = self.fc2(fc1)
+
+        return fc2
+
+
+
 
 
 EMBEDDING_DIM = 512
 HIDDEN_DIM = 256
 max_seq_en = 50
 max_seq_zh = 100
-EPOCH=100
+EPOCH=10
 
-batch=1024
+batch=32
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 print("device:",device)
 
 
+train_df = pd.read_csv("data/train.csv")
+# test_df = pd.read_csv("data/test.csv")
 
-# with open('save/word_to_ix_en.pickle', mode='rb') as f:
-#      word_to_ix_en = pickle.load(f)
-# with open('save/word_to_ix_zh.pickle', mode='rb') as f:
-#      word_to_ix_zh = pickle.load(f)
+train_df.replace('unrelated', 0, inplace=True)
+train_df.replace('agreed', 1, inplace=True)
+train_df.replace('disagreed', 2, inplace=True)
 
-print("@preprocessing..")
-#_ = preprocess_()
 
-# Data loading
-with open('save/word_to_ix_en.pickle', mode='rb') as f:
-     word_to_ix_en = pickle.load(f)
-with open('save/word_to_ix_zh.pickle', mode='rb') as f:
-     word_to_ix_zh = pickle.load(f)
-with open('save/train_df.pickle', mode='rb') as f:
-     train_df = pickle.load(f)
-with open('save/test_df.pickle', mode='rb') as f:
-     test_df = pickle.load(f)
+# X = pd.read_pickle("save/features.pickle")
+# y = list(train_df["label"])
+
 train_df = train_df.sample(frac=1, random_state=0).reset_index(drop=True)
+
+# p = list(zip(X, y))
+# random.shuffle(p)
+# X, y = zip(*p)
+
 
 # K-Fold Cross validation
 fold_num = 5
 kf = KFold(n_splits=fold_num)
 kf.get_n_splits(train_df)
 
+# kf.get_n_splits(X, y)
+
 train_data_list = []
 val_data_list = []
-#
-# for train_index, val_index in kf.split(train_df):
-#     training_df = train_df.iloc[train_index]
-#     val_df = train_df.iloc[val_index]
-#
-#     new_data, _, _, _ = make_new_data(training_df)
-#     train1_en, train2_en = [],[]
-#     train1_zh, train2_zh = [],[]
-#     y_train = []
-#     for text1_en, text2_en, text1_zh, text2_zh,label in new_data:
-#             train1_en.append(text1_en)
-#             train2_en.append(text2_en)
-#             train1_zh.append(text1_zh)
-#             train2_zh.append(text2_zh)
-#             y_train.append(label)
-#     val1_en, val2_en = list(val_df["title1_en"]), list(val_df["title2_en"])
-#     val1_zh, val2_zh = list(val_df["title1_zh"]), list(val_df["title2_zh"])
-#     y_val = list(val_df["label"])
-#
-#
-#     train_data_list.append((train1_en,train2_en,train1_zh,train2_zh,y_train))
-#     val_data_list.append((val1_en, val2_en,val1_zh, val2_zh,y_val))
+for train_index, val_index in kf.split(train_df):
+#for train_index, val_index in kf.split(X):
+    training_df = train_df.iloc[train_index]
+    val_df = train_df.iloc[val_index]
+
+
+
+    train1_en, train2_en = list(training_df["title1_en"]), list(training_df["title2_en"])
+    y_train = list(training_df["label"])
+
+    val1_en, val2_en = list(val_df["title1_en"]), list(val_df["title2_en"])
+    #val1_zh, val2_zh = list(val_df["title1_zh"]), list(val_df["title2_zh"])
+    y_val = list(val_df["label"])
+
+
+    train_data_list.append((train1_en,train2_en, y_train))#train1_zh,train2_zh,y_train))
+    val_data_list.append((val1_en, val2_en, y_val))# val1_zh, val2_zh,y_val))
 #
 # with open('save/kfold_train_data.pickle', mode='wb') as f:
 #     pickle.dump(train_data_list, f)
 # with open('save/kfold_val_data.pickle', mode='wb') as f:
 #     pickle.dump(val_data_list, f)
-#
 
-with open('save/kfold_train_data.pickle', mode='rb') as f:
-     train_data_list = pickle.load(f)
-with open('save/kfold_val_data.pickle', mode='rb') as f:
-     val_data_list = pickle.load(f)
 
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+bert_model = BertModel.from_pretrained('bert-base-uncased').to(device)
+bert_model.eval()
 
 fold=1
 for train_fold, val_fold in zip(train_data_list,val_data_list):
     print("{}/{} fold :".format(fold, fold_num))
     print("train length:{}, val length:{}".format(len(train_fold[0]), len(val_fold[0])))
 
-    (train1_en,train2_en,train1_zh,train2_zh,y_train) = train_fold
-    (val1_en, val2_en,val1_zh, val2_zh,y_val) = val_fold
+    (train1_en,train2_en,y_train) = train_fold
+    (val1_en, val2_en,y_val) = val_fold
 
-
-    # Class weight gan be got as : n_samples / (n_classes * np.bincount(y))
-    # 不均衡データなので
     c = Counter(y_train)
     class_weight = []
     for label, num in sorted(c.items()):
         print(label, num)
         class_weight.append(len(y_train)/(3*num))
     class_weight = torch.FloatTensor(class_weight).to(device)
-    print("class weight:", class_weight)
 
 
-    #model = LSTM_Classifier(EMBEDDING_DIM, HIDDEN_DIM, len(word_to_ix_en), len(word_to_ix_zh), target_size=3, seq_length_en=max_seq_en,seq_length_zh=max_seq_zh)
-    #model = MLP_Classifier(EMBEDDING_DIM, len(word_to_ix_en), target_size=3, seq_length=max_seq_en)
-    #model = Text_CNN_Classifier(EMBEDDING_DIM, len(word_to_ix_en), target_size=3, seq_length=max_seq_length)
-    model = Twolang_Classifier(EMBEDDING_DIM, len(word_to_ix_en),len(word_to_ix_zh), target_size=3, kernel_num=64)
 
+
+    model = BERT_Classifier(bert_model)
     model.to(device)
-
     loss_function = nn.CrossEntropyLoss()#weight=class_weight)
     weighted_loss_function = nn.CrossEntropyLoss(weight=class_weight)#weight=class_weight)
 
@@ -134,14 +147,9 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
     optimizer = optim.Adam(model.parameters(), lr=0.001)
 
 
-    train_dataset = TitleDataset(train1_en, train2_en, train1_zh, train2_zh, y_train,
-                                 dic_en=word_to_ix_en, dic_zh=word_to_ix_zh, transform=Toidx(),
-                                 seq_length_en=max_seq_en, seq_length_zh=max_seq_zh)
 
-    val_dataset = TitleDataset(val1_en, val2_en, val1_zh, val2_zh, y_val,
-                               dic_en=word_to_ix_en, dic_zh=word_to_ix_zh, transform=Toidx(),
-                               seq_length_en=max_seq_en, seq_length_zh=max_seq_zh)
-
+    train_dataset = BERTDataset(train1_en, train2_en, y_train, tokenizer)
+    val_dataset = BERTDataset(val1_en, val2_en, y_val, tokenizer)
 
     #ミニバッチ内のクラス比を揃える.
     class_sample_count = np.array([len(np.where(y_train == t)[0]) for t in np.unique(y_train)])
@@ -154,32 +162,21 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
     train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=False, sampler=sampler)#, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=512, shuffle=False)
 
-
     def train(epoch):
         model.train()
 
         for batch_idx, sample_batch in enumerate(tqdm(train_loader)):
-            #print("batch_idx:",batch_idx)
-            en_title1 = sample_batch["t1_en"].to(device)
-            en_title2 = sample_batch["t2_en"].to(device)
-            zh_title1 = sample_batch["t1_zh"].to(device)
-            zh_title2 = sample_batch["t2_zh"].to(device)
+            input_ids = sample_batch["input_ids"].to(device)
+            input_mask = sample_batch["input_mask"].to(device)
+            input_type_ids = sample_batch["input_type_ids"].to(device)
             y = sample_batch["label"].to(device)
 
             optimizer.zero_grad()
-            outputs = model(en_title1, en_title2, zh_title1, zh_title2)
+            outputs = model(input_ids, input_mask)
 
             loss = loss_function(outputs, y)
             loss.backward()
             optimizer.step()
-
-
-            #optimizer.zero_grad()
-            #outputs = model(en_title2, en_title1)
-
-            #loss = loss_function(outputs, y)
-            #loss.backward()
-            #optimizer.step()
 
         print("epoch:{},train_loss:{:.4f}".format(epoch+1 ,loss))
         #print("train data all :", (batch_idx+1)*batch)
@@ -195,14 +192,12 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
             correct = 0
 
             for batch_idx, sample_batch in enumerate(val_loader):
-                en_title1 = sample_batch["t1_en"].to(device)
-                en_title2 = sample_batch["t2_en"].to(device)
-                zh_title1 = sample_batch["t1_zh"].to(device)
-                zh_title2 = sample_batch["t2_zh"].to(device)
+                input_ids = sample_batch["input_ids"].to(device)
+                input_mask = sample_batch["input_mask"].to(device)
+                input_type_ids = sample_batch["input_type_ids"].to(device)
                 y = sample_batch["label"].to(device)
 
-                output = model(en_title1, en_title2, zh_title1, zh_title2)
-
+                output = model(input_ids, input_mask)
                 # sum up batch loss
                 test_loss += weighted_loss_function(output, y).item()
                 # get the index of the max log-probability
@@ -254,7 +249,7 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
 
 
 
-    def save_model(model, val_accuracy, save_path="model"):
+    def save_model(model, val_accuracy, save_path="model/BERT/"):
         # if os.path.exists(path + "*.model"):
         #     os.remove(path + "*.model")
         name = "{}fold_mlp.model".format(fold)
