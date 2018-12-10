@@ -27,6 +27,8 @@ class BERTDataset(Dataset):
         tokenizer = self.tokenizer
 
         title1_en = self.titles1_en[idx]
+
+
         tokens_a = tokenizer.tokenize(title1_en)
         #indexed_tokens_title1_en = tokenizer.convert_tokens_to_ids(tokenized_title1_en)
 
@@ -35,7 +37,7 @@ class BERTDataset(Dataset):
         tokens_b = tokenizer.tokenize(title2_en)
         #indexed_tokens_title2_en = tokenizer.convert_tokens_to_ids(tokenized_title2_en)
 
-
+        #print(len(tokens_a), len(tokens_b))
 
         def _truncate_seq_pair(tokens_a, tokens_b, max_length):
             """Truncates a sequence pair in place to the maximum length."""

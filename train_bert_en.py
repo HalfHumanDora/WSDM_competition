@@ -14,7 +14,6 @@ from sklearn.model_selection import train_test_split
 
 import re
 import os
-import argparse
 
 from nltk.corpus import stopwords
 import nltk
@@ -23,9 +22,7 @@ import copy
 # from model import BERT_Classifier
 from dataset import *
 from collections import defaultdict
-from preprocess import english_clean_series, chinese_clean_series
-
-from sklearn.model_selection import KFold, StratifiedKFold
+from sklearn.model_selection import KFold
 
 from pytorch_pretrained_bert.modeling import BertForSequenceClassification, BertConfig
 from pytorch_pretrained_bert.optimization import BertAdam
@@ -36,9 +33,10 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
                     level = logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 import requests
 def line(Me):
-    #line_token = "2rSRaP9FPrDCgIPNGuY3LRJ73jRhjq5xgbLDovGMzHi"
+    line_token = "2rSRaP9FPrDCgIPNGuY3LRJ73jRhjq5xgbLDovGMzHi"
     line_token = "8G6JxWLK0dh3KjqEFgdcQVNr2EZKPOdD59o9cHsdhCC"
     line_notify_token = line_token #先程発行したコードを貼ります
     line_notify_api = 'https://notify-api.line.me/api/notify'
@@ -48,7 +46,7 @@ def line(Me):
     headers = {'Authorization': 'Bearer ' + line_notify_token}
     line_notify = requests.post(line_notify_api, data=payload, headers=headers)
 
-
+    #return 0
 
 class BERT_Classifier(nn.Module):
     def __init__(self, bert_model, target_size=3):
@@ -58,9 +56,7 @@ class BERT_Classifier(nn.Module):
         kernel_num=256
         self.seq_length_en=100
 
-
         self.bert_model = bert_model
-
         # self.conv2_en = nn.Conv2d(1, kernel_num, (2, self.embedding_dim))
         # self.conv3_en = nn.Conv2d(1, kernel_num, (3, self.embedding_dim))
         # self.conv4_en = nn.Conv2d(1, kernel_num, (4, self.embedding_dim))
@@ -76,8 +72,8 @@ class BERT_Classifier(nn.Module):
 
         self.fc1 = nn.Linear(768, 768)
         #self.fc1_bn = nn.BatchNorm1d(300)
-        self.fc1_drop = nn.Dropout(p=0.5, inplace=False)
-        #self.activation = F.tanh()
+        self.fc1_drop = nn.Dropout(p=0.3, inplace=False)
+        self.activation = nn.Tanh()
         self.fc2 = nn.Linear(768, target_size)
 
     def forward(self, input_ids, input_mask):
@@ -85,161 +81,137 @@ class BERT_Classifier(nn.Module):
 
         last_encoder_layer, _ = self.bert_model(input_ids, token_type_ids=None, attention_mask=input_mask, output_all_encoded_layers=False)
 
-        # last_encoder_layer = last_encoder_layer.view(batch, 1, self.seq_length_en, self.embedding_dim)
-        #
-        #
-        # conv2 = F.relu(self.conv2_en(last_encoder_layer))
-        # conv3 = F.relu(self.conv3_en(last_encoder_layer))
-        # conv4 = F.relu(self.conv4_en(last_encoder_layer))
-        #
-        # pool2 = self.Max2_pool_en(conv2).view(batch, -1)
-        # pool3 = self.Max3_pool_en(conv3).view(batch, -1)
-        # pool4 = self.Max4_pool_en(conv4).view(batch, -1)
 
-        #print(last_encoder_layer.size())
-        # embedding = torch.sum(last_encoder_layer, 1)
-
-        #cat = torch.cat((pool2, pool3, pool4), dim=1)
-
-        #print("fc1", cat.size())
 
         first_token_tensor = last_encoder_layer[:, 0]
 
-        fc1 = self.fc1_drop(F.relu(self.fc1(first_token_tensor)))
-        #fc1 = self.fc1_drop(self.activation(self.fc1(first_token_tensor)))
+        # fc1 = self.fc1_drop(F.relu(self.fc1(first_token_tensor)))
+        fc1 = self.fc1_drop(self.activation(self.fc1(first_token_tensor)))
         fc2 = self.fc2(fc1)
 
         return fc2
 
 
-
-parser = argparse.ArgumentParser()
-
-## Required parameters
-parser.add_argument("-f", "--fold",
-                    default=-1,
-                    type=int,
-                    required=False,
-                    help="the number of k-fold.")
-parser.add_argument("-g", "--gpu_id",
-                    default=-1,
-                    type=int,
-                    required=False,
-                    help="The ID of using GPU.")
-parser.add_argument("-b", "--batch",
-                    default=8,
-                    type=int,
-                    required=False,
-                    help="The sample size of mini-batch.")
-parser.add_argument("-l", "--language",
-                    default="en",
-                    type=str,
-                    required=True,
-                    help="language to train BERT.")
-
-
-args = parser.parse_args()
-
-if args.gpu_id < 0 and not torch.cuda.is_available():
-    device = "cpu"
-elif  args.gpu_id >= 0 and torch.cuda.is_available():
-    device = "cuda:{}".format(args.gpu_id)
-else:
-    device = "cuda:0"
-
-
-print("----------train_bert_zh.py starting--------------")
-print("language:", args.language)
-print("device:", device)
-print("fold:", args.fold)
-
-
+line("train_bert_en.py starting...")
 
 
 EMBEDDING_DIM = 512
 HIDDEN_DIM = 256
 max_seq_en = 50
-max_seq_zh = 50
-EPOCH=100
+max_seq_zh = 100
+EPOCH=50
+
+batch=32
+
 gradient_accumulation_steps=1
-batch=args.batch
-local_rank=-1
-learning_rate=5e-5
-warmup_proportion=0.1
 
+device = torch.device("cuda:2" if torch.cuda.is_available() else "cpu")
+print("device:",device)
 
-#device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-print("EPOCH", EPOCH)
-print("batch", batch)
 
 train_df = pd.read_csv("data/train.csv")
+# test_df = pd.read_csv("data/test.csv")
+
 train_df.replace('unrelated', 0, inplace=True)
 train_df.replace('agreed', 1, inplace=True)
 train_df.replace('disagreed', 2, inplace=True)
 
+def english_clean_series(series):
+    # 大文字--->小文字
+    series = series.str.lower()
 
-train_df["title1_zh"] =  chinese_clean_series(train_df["title1_zh"])
-train_df["title2_zh"] =  chinese_clean_series(train_df["title2_zh"])
+    def clean_seq(seq):
+        ori = copy.copy(seq)
+
+        seq = seq.replace("it's", "it is")
+        seq = seq.replace("he's", "he is")
+        seq = seq.replace("she's", "she is")
+        seq = seq.replace("you're", "you are")
+        seq = seq.replace("we're", "we are")
+        seq = seq.replace("they're", "they are")
+        seq = seq.replace("i'm", "i am")
+        seq = seq.replace("don't", "do not")
+        seq = seq.replace("does't", "does not")
+        seq = seq.replace("didn't", "did not")
+        seq = seq.replace("aren't", "are not")
+        seq = seq.replace("weren't", "were not")
+        seq = seq.replace("isn't", "is not")
+        seq = seq.replace("wasn't", "was not")
+        seq = seq.replace("haven't", "have not")
+        seq = seq.replace("hasn't", "has not")
+        seq = seq.replace("can't", "can not")
+        seq = seq.replace("cannot", "can not")
+
+        seq = seq.replace("shouldn't", "should not")
+        seq = seq.replace("wouldn't", "would not")
+        seq = seq.replace("couldn't", "could not")
+        seq = seq.replace("mightn't", "might not")
+        seq = seq.replace("mustn't", "must not")
+        seq = seq.replace("needn't", "need not")
+        seq = seq.replace("won't", "will not")
+
+        seq = seq.replace("\n", "")
+
+        seq = seq.replace("< i >", "")
+        seq = seq.replace("< / i >", "")
+
+        seq = re.sub(r'[,."''“”。、#()→⇒←↓↑:;㊙️【《》=|/+<>]+', '', seq)
+        seq = re.sub(r'[!?]+', ' ', seq)
+        # seq = re.sub(r'[$]+', '$ ', seq)
+        # seq = re.sub(r'[0-9]+', '<NUM>', seq)
+
+        if len(seq)==0:
+            print("0 lengrh assert!!,",ori, seq)
+        return seq
+
+    series = series.apply(clean_seq)
+    return series
+
 train_df["title1_en"] = english_clean_series(train_df["title1_en"])
 train_df["title2_en"] = english_clean_series(train_df["title2_en"])
 
-#Shuffle dataframe.
+
 train_df = train_df.sample(frac=1, random_state=0).reset_index(drop=True)#.iloc[:300, :]
 
 
 # K-Fold Cross validation
-fold_num = 8
-# kf = KFold(n_splits=fold_num, random_state=42)
-kf = StratifiedKFold(n_splits=fold_num, random_state=42)
+fold_num = 5
+kf = KFold(n_splits=fold_num)
 kf.get_n_splits(train_df)
 
 # kf.get_n_splits(X, y)
 
 train_data_list = []
 val_data_list = []
-for train_index, val_index in kf.split(train_df, train_df["label"]):
+for train_index, val_index in kf.split(train_df):
 #for train_index, val_index in kf.split(X):
     training_df = train_df.iloc[train_index]
     val_df = train_df.iloc[val_index]
 
     train1_en, train2_en = list(training_df["title1_en"]), list(training_df["title2_en"])
-    train1_zh, train2_zh = list(training_df["title1_zh"]), list(training_df["title2_zh"])
-
     y_train = list(training_df["label"])
 
     val1_en, val2_en = list(val_df["title1_en"]), list(val_df["title2_en"])
-    val1_zh, val2_zh = list(val_df["title1_zh"]), list(val_df["title2_zh"])
+    #val1_zh, val2_zh = list(val_df["title1_zh"]), list(val_df["title2_zh"])
     y_val = list(val_df["label"])
 
-    train_data_list.append((train1_en,train2_en,train1_zh,train2_zh, y_train))#train1_zh,train2_zh,y_train))
-    val_data_list.append((val1_en, val2_en,val1_zh, val2_zh, y_val))# val1_zh, val2_zh,y_val))
+    train_data_list.append((train1_en,train2_en, y_train))#train1_zh,train2_zh,y_train))
+    val_data_list.append((val1_en, val2_en, y_val))# val1_zh, val2_zh,y_val))
+#
+# with open('save/kfold_train_data.pickle', mode='wb') as f:
+#     pickle.dump(train_data_list, f)
+# with open('save/kfold_val_data.pickle', mode='wb') as f:
+#     pickle.dump(val_data_list, f)
 
-# K-foldを分割して行う場合
-if args.fold < 0 :
-    split_kfold = False
-    fold = 1
-else:
-    split_kfold = True
-    fold = args.fold
 
-fold_count = 1
-reach_target_fold = False
 
+fold=1
 for train_fold, val_fold in zip(train_data_list,val_data_list):
-
-    if split_kfold:
-        if not fold_count == fold:
-            fold_count += 1
-            continue
-        else:
-            reach_target_fold = True
-
-
     print("{}/{} fold :".format(fold, fold_num))
     print("train length:{}, val length:{}".format(len(train_fold[0]), len(val_fold[0])))
 
-    (train1_en,train2_en,train1_zh,train2_zh, y_train) = train_fold
-    (val1_en, val2_en,val1_zh, val2_zh, y_val) = val_fold
+    (train1_en,train2_en,y_train) = train_fold
+    (val1_en, val2_en,y_val) = val_fold
 
     c = Counter(y_train)
     class_weight = []
@@ -250,33 +222,21 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
 
     num_train_steps = int(len(train_fold[0]) / batch / gradient_accumulation_steps * EPOCH)
 
-    if args.language=="zh":
-        tokenizer = BertTokenizer.from_pretrained('bert-base-chinese')
-        bert_model = BertModel.from_pretrained('bert-base-chinese').to(device)
-        train_dataset = BERTDataset(train1_zh, train2_zh, y_train, tokenizer, seq_length=max_seq_zh)
-        val_dataset = BERTDataset(val1_zh, val2_zh, y_val, tokenizer, seq_length=max_seq_zh)
-    elif args.language=="en":
-        tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        bert_model = BertModel.from_pretrained('bert-base-uncased').to(device)
-        train_dataset = BERTDataset(train1_en, train2_en, y_train, tokenizer, seq_length=max_seq_en)
-        val_dataset = BERTDataset(val1_en, val2_en, y_val, tokenizer, seq_length=max_seq_en)
-    else:
-        print("choose either en or zh as language.")
+
+
+    # model = BERT_Classifier(bert_model)
+    # model.to(device)
+    # model = BertForSequenceClassification.from_pretrained('bert-base-uncased').to(device)
+    tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+    bert_model = BertModel.from_pretrained('bert-base-uncased').to(device)
     model = BERT_Classifier(bert_model).to(device)
 
-    # print("model parameters", [j, i.size() for j, i in model.named_parameters()])
-    # for n, p in model.named_parameters():
-    #     print(n)
-    #     # print(p)
-    #     print("--------")
+    loss_function = nn.CrossEntropyLoss()#weight=class_weight)
+    weighted_loss_function = nn.CrossEntropyLoss(weight=class_weight)#weight=class_weight)
 
-
-    loss_function = nn.CrossEntropyLoss()
-    weighted_loss_function = nn.CrossEntropyLoss(weight=class_weight)
-
-    # Prepare optimizer
     #optimizer = optim.SGD(model.parameters(), lr=0.001)
-    #optimizer = optim.Adam(model.parameters(), lr=0.01)
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'gamma', 'beta']
     optimizer_grouped_parameters = [
@@ -284,6 +244,11 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
         {'params': [p for n, p in param_optimizer if any(nd in n for nd in no_decay)], 'weight_decay_rate': 0.0}
         ]
     t_total = num_train_steps
+    print("t_total", t_total)
+
+    local_rank=-1
+    learning_rate=5e-5
+    warmup_proportion=0.1
 
     if local_rank != -1:
         t_total = t_total // torch.distributed.get_world_size()
@@ -292,6 +257,9 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
                          warmup=warmup_proportion,
                          t_total=t_total)
 
+
+    train_dataset = BERTDataset(train1_en, train2_en, y_train, tokenizer, seq_length=max_seq_en)
+    val_dataset = BERTDataset(val1_en, val2_en, y_val, tokenizer, seq_length=max_seq_en)
 
     #ミニバッチ内のクラス比を揃える.
     class_sample_count = np.array([len(np.where(y_train == t)[0]) for t in np.unique(y_train)])
@@ -304,10 +272,10 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
     train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=False, sampler=sampler)#, pin_memory=True)
     val_loader = DataLoader(val_dataset, batch_size=batch, shuffle=False)
 
-
     def train(epoch, global_step):
         model.train()
         tr_loss = 0
+
         for batch_idx, sample_batch in enumerate(tqdm(train_loader)):
             input_ids = sample_batch["input_ids"].to(device)
             input_mask = sample_batch["input_mask"].to(device)
@@ -323,19 +291,17 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
             loss.backward()
             optimizer.step()
 
-            #print("train loss : ", loss.item())
-
             global_step+=1
 
             if batch_idx%100==0:
-                print("==========>train_loss:{}".format(loss))
+                print("epoch:{},train_loss:{:.4f}".format(epoch+1 ,loss))
 
 
         print("epoch:{},train_loss:{:.4f}".format(epoch+1 ,loss))
-
-        tr_loss /= (batch_idx+1)
+        line("EN, fold:{}, epoch:{},train_loss:{:.4f}".format(fold, epoch+1 ,loss))
 
         #print("train data all :", (batch_idx+1)*batch)
+        tr_loss /= (batch_idx+1)
 
         return model, tr_loss, global_step
 
@@ -357,7 +323,8 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
                 # sum up batch loss
                 test_loss += weighted_loss_function(output, y).item()
                 #test_loss += loss_function(output, y).item()
-                #test_loss += model(input_ids, input_type_ids, input_mask, y)
+                #total_loss += model(input_ids, input_type_ids, input_mask, y)
+
                 # get the index of the max log-probability
                 pred = output.max(1, keepdim=True)[1]
                 correct += pred.eq(y.view_as(pred)).sum().item()
@@ -372,18 +339,22 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
                   .format(test_loss, correct, len(val_loader.dataset),
                           accuracy))
 
+            line('tori,EN : Validation set: Weighted loss: {:.4f}, Accuracy: {}/{} ({:.2f}%)'
+                    .format(test_loss, correct, len(val_loader.dataset),
+                            accuracy))
+
             result = {'val_loss': test_loss,
                       'eval_accuracy': accuracy,
                       'global_step': global_step,
                       'train_loss': tr_loss}
 
-            output_eval_file = os.path.join("result/balanced_8fold/{}".format(args.language), "{}_fold_eval_results.txt".format(fold))
+            output_eval_file = os.path.join("result/en/", "{}_fold_eval_results.txt".format(fold))
             with open(output_eval_file, "a") as writer:
                 logger.info("***** Eval results *****")
                 for key in sorted(result.keys()):
                     logger.info("  %s = %s", key, str(result[key]))
                     writer.write("%s = %s\n" % (key, str(result[key])))
-
+                writer.write("\n" )
 
             return test_loss, accuracy
 
@@ -391,6 +362,7 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
     def weighted_accuracy(pred, true):
         true = true.cpu().numpy()
         pred = pred.cpu().numpy()
+
         class_weight = [1/16, 1/15, 1/5]
         score = 0
         perfect_score = 0
@@ -416,51 +388,33 @@ for train_fold, val_fold in zip(train_data_list,val_data_list):
         #print("score:{}, ideal:{}".format(score, perfect_score))
         return 100 * score/perfect_score
 
-    def save_model(model, val_accuracy, save_path="/home/tanaka/WSDM/model/BERT/balanced_8fold/{}/".format(args.language)):
+
+
+
+    def save_model(model, val_accuracy, save_path="model/BERT/en"):
         # if os.path.exists(path + "*.model"):
         #     os.remove(path + "*.model")
-        name = "{}fold_bert.model".format(fold)
+        name = "{}fold_mlp.model".format(fold)
         PATH = os.path.join(save_path, name)
-        #torch.save(model, PATH)
-        torch.save(model.cpu().state_dict(), PATH)
+        torch.save(model, PATH)
 
     lowest_loss = 1000000000
     highest_accuracy = 0
     global_step=0
-    loss_when_best = 10000000
 
     for epoch in range(EPOCH):
         #print(epoch+1)
-
         model, tr_loss, global_step = train(epoch, global_step)
         val_loss, accuracy = test(tr_loss)
-
 
     #     if val_loss < lowest_loss:
     #         lowest_loss = val_loss
     #         save_model(model)
 
-        if accuracy >= highest_accuracy:
+        if accuracy > highest_accuracy:
             #print("saving model...")
-
-            if accuracy == highest_accuracy:
-                if loss_when_best > val_loss:
-                    save_model(model, highest_accuracy)
-                    loss_when_best = val_loss
-            else:
-                highest_accuracy = accuracy
-                save_model(model, highest_accuracy)
-                loss_when_best = val_loss
+            highest_accuracy = accuracy
+            save_model(model, highest_accuracy)
         print("highest_accuracy:{:.2f}% \n".format(highest_accuracy))
-        line('{} Fold:{} Epoch:{}\ntrain loss:{}\nValidation set: \nWeighted loss: {:.4f}\nAccuracy: {:.2f}%\nhighest Accuracy:{:.2f}%'
-                .format(args.language, fold, epoch, tr_loss, val_loss, accuracy, highest_accuracy))
-
-        output_eval_file = os.path.join("result/balanced_8fold/{}".format(args.language), "{}_fold_eval_results.txt".format(fold))
-        with open(output_eval_file, "a") as writer:
-            writer.write("highest_accuracy:{}\n".format(highest_accuracy))
-            writer.write("\n")
-
-    if split_kfold and reach_target_fold:
-        break
 
     fold+=1

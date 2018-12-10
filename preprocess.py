@@ -19,10 +19,162 @@ import nltk
 from collections import defaultdict
 import copy
 #nltk.download('stopwords')
-stopwords_en = stopwords.words('english')
-stopwords_en.remove("not")
-stopwords_en.remove("no")
-stopwords_en.remove("nor")
+# stopwords_en = stopwords.words('english')
+# stopwords_en.remove("not")
+# stopwords_en.remove("no")
+# stopwords_en.remove("nor")
+
+def english_clean_series(series):
+    # 大文字--->小文字
+    series = series.str.lower()
+
+    def clean_seq(seq):
+        ori = copy.copy(seq)
+
+        seq = seq.replace("it's", "it is")
+        seq = seq.replace("he's", "he is")
+        seq = seq.replace("she's", "she is")
+        seq = seq.replace("you're", "you are")
+        seq = seq.replace("we're", "we are")
+        seq = seq.replace("they're", "they are")
+        seq = seq.replace("i'm", "i am")
+        seq = seq.replace("don't", "do not")
+        seq = seq.replace("does't", "does not")
+        seq = seq.replace("didn't", "did not")
+        seq = seq.replace("aren't", "are not")
+        seq = seq.replace("weren't", "were not")
+        seq = seq.replace("isn't", "is not")
+        seq = seq.replace("wasn't", "was not")
+        seq = seq.replace("haven't", "have not")
+        seq = seq.replace("hasn't", "has not")
+        seq = seq.replace("can't", "can not")
+        seq = seq.replace("cannot", "can not")
+
+        seq = seq.replace("shouldn't", "should not")
+        seq = seq.replace("wouldn't", "would not")
+        seq = seq.replace("couldn't", "could not")
+        seq = seq.replace("mightn't", "might not")
+        seq = seq.replace("mustn't", "must not")
+        seq = seq.replace("needn't", "need not")
+        seq = seq.replace("won't", "will not")
+
+        seq = seq.replace("\n", "")
+
+        seq = seq.replace("< i >", "")
+        seq = seq.replace("< / i >", "")
+
+        seq = re.sub(r'#[,."''“”。、#()→⇒←↓↑:;㊙️【《》=|/+<>]+', '', seq)
+        seq = re.sub(r'[!?]+', ' ', seq)
+        # seq = re.sub(r'[$]+', '$ ', seq)
+        # seq = re.sub(r'[0-9]+', '<NUM>', seq)
+
+        if len(seq)==0:
+            print("0 lengrh assert!!,",ori, seq)
+        return seq
+
+    series = series.apply(clean_seq)
+    return series
+
+def chinese_clean_series(series):
+    def clean_seq(seq):
+        seq = str(seq)
+        ori = copy.copy(seq)
+
+        seq = seq.replace("< i >", "")
+        seq = seq.replace("< / i >", "")
+        seq = seq.replace("\n", "")
+        seq = re.sub(r'#[,."''“”。、#()→⇒←↓↑:;_㊙️【《》=|/<>]+', '', seq)
+        seq = re.sub(r'[!！？?-]+', ' ', seq)
+        seq = re.sub(r'[$]+', '$ ', seq)
+        # seq = re.sub(r'[0-9]+', '<NUM>', seq)
+
+        if len(seq)==0:
+            print("0 lengrh assert!!,",ori, seq)
+
+        return seq
+
+    series = series.apply(clean_seq)
+    return series
+
+
+
+
+def estimate_relationship(df):
+    labels = list(df["label"])
+    id1_train = list(df["tid1"])
+    id2_train = list(df["tid2"])
+
+    given_dic = defaultdict(list)
+    fixed_dic = defaultdict(list)
+
+    # agree, disagree辞書の作成
+    # fixed_dicではA,B,labelがきた時、B,A,labelも登録する.
+    # ラベルの修正もする. agree とunrelatedの衝突ではagreeの勝ち,agreeとdisagreeではdisagreeの勝ち.
+    for idx, id1 in enumerate(id1_train):
+        label = labels[idx]
+        id2 = id2_train[idx]
+
+        if not len(fixed_dic[id1]) == 0:
+            already_given_id = np.array(fixed_dic[id1])[:,0]
+            already_given_label = np.array(fixed_dic[id1])[:,1]
+            if not id2 in already_given_id:
+                #まだ登録されていないとき
+                fixed_dic[id1].append([id2, label])
+            else:
+                #すでに登録ずみのとき
+                id2_idx = list(already_given_id).index(id2)
+                already_given = already_given_label[id2_idx]
+                if not label == already_given:
+                    # tid1,A, tid2,B : label 1 だが tid1,B, tid2,A : label 0というケースあり.  trainで88件.
+                    # その場合は修正.
+                    #print(id1, id2, already_given, label)
+                    if label == 0:
+                        pass
+                    elif label == 1 and already_given == 0:
+                        true_label = 1
+                        #ラベルの修正.
+                        fixed_dic[id1][id2_idx][1] = true_label
+                    elif label == 2 or already_given == 2:
+                        true_label = 2
+                        fixed_dic[id1][id2_idx][1] = true_label
+
+                    #print(id1, given_dic[id1][id2_idx])
+
+                else:
+                    pass
+
+        else:
+            #最初に登録するとき
+            fixed_dic[id1].append([id2, label])
+
+        if not len(fixed_dic[id2]) == 0:
+            already_given_id = np.array(fixed_dic[id2])[:,0]
+            already_given_label = np.array(fixed_dic[id2])[:,1]
+            if not id1 in already_given_id:
+                fixed_dic[id2].append([id1, label])
+            else:
+                id1_idx = list(already_given_id).index(id1)
+                already_given = already_given_label[id1_idx]
+                if not label == already_given:
+                    #print(id1, id2, label, already_given_label [id1_idx])
+                    # tid1,A, tid2,B : label 1 だが tid1,B, tid2,A : label 0というケースあり.  trainで88件.
+                    if label == 0:
+                        pass
+                    elif label == 1 and already_given == 0:
+                        true_label = 1
+                        fixed_dic[id2][id1_idx][1] = true_label
+                    elif label == 2 or already_given == 2:
+                        true_label = 2
+                        fixed_dic[id2][id1_idx][1] = true_label
+
+
+        else:
+            #最初に登録するとき
+            fixed_dic[id2].append([id1, label])
+
+
+
+    return 0
 
 def make_new_data(df):
 
@@ -137,7 +289,9 @@ def make_new_data(df):
             #最初に登録するとき
             fixed_dic[id2].append([id1, label])
 
-
+    # with open('save/fixed_dic.pickle', mode='wb') as f:
+    #     pickle.dump(fixed_dic, f)
+    # print("saved fixed_dic")
 
 
     #print("agree dic:{}, disagree dic:{}".format(len(agree_dic), len(disagree_dic)))
@@ -145,7 +299,7 @@ def make_new_data(df):
     # 前後入れ替え重複の除去
     fixed_dic_cleaned = copy.deepcopy(fixed_dic)
     print("重複の除去...")
-    for id_, id_label_list in tqdm(fixed_dic_cleaned.items()):
+    for id_, id_label_list in fixed_dic_cleaned.items():
         #print(id_label_list)
         if len(id_label_list) == 0:
             continue
@@ -189,8 +343,8 @@ def make_new_data(df):
         for id2, label in zip(id2_list, label_list):
             new_data.append((id_to_text_en[id1], id_to_text_en[id2], id_to_text_zh[id1], id_to_text_zh[id2], label))
 
-
-    print("fixed data length:{}, original:{}".format(len(new_data), len(id1_train)))
+    #
+    # print("fixed data length:{}, original:{}".format(len(new_data), len(id1_train)))
 
 
     # givenラベルから予測されるラベルをもつ.
@@ -247,14 +401,20 @@ def make_new_data(df):
 #     c = Counter(given_label_dis)
 #     print("given_label_disagree", c)
     print("final data length:",len(new_data))
-    with open('save/fixed_dic.pickle', mode='wb') as f:
-        pickle.dump(fixed_dic, f)
-    with open('save/given_dic.pickle', mode='wb') as f:
-        pickle.dump(given_dic, f)
-    with open('save/forecast_dic.pickle', mode='wb') as f:
-        pickle.dump(forecast_dic, f)
+    # with open('save/fixed_dic.pickle', mode='wb') as f:
+    #     pickle.dump(fixed_dic, f)
+    # with open('save/given_dic.pickle', mode='wb') as f:
+    #     pickle.dump(given_dic, f)
+    # with open('save/forecast_dic.pickle', mode='wb') as f:
+    #     pickle.dump(forecast_dic, f)
 
-    return new_data, given_dic, fixed_dic, forecast_dic
+    return new_data#, given_dic, fixed_dic, forecast_dic
+
+
+def clean_df(df):
+
+
+    return df
 
 
 
@@ -262,102 +422,79 @@ def preprocess_():
 
     train_df = pd.read_csv("data/train.csv")
     test_df = pd.read_csv("data/test.csv")
-    sub = pd.read_csv("data/sample_submission.csv")
 
-
-    def english_clean_series(series):
-        # 大文字--->小文字
-        series = series.str.lower()
-
-        def clean_seq(seq):
-            seq = seq.replace("it's", "it is")
-            seq = seq.replace("he's", "he is")
-            seq = seq.replace("she's", "she is")
-            seq = seq.replace("you're", "you are")
-            seq = seq.replace("we're", "we are")
-            seq = seq.replace("they're", "they are")
-            seq = seq.replace("i'm", "i am")
-            seq = seq.replace("don't", "do not")
-            seq = seq.replace("does't", "does not")
-            seq = seq.replace("didn't", "did not")
-            seq = seq.replace("aren't", "are not")
-            seq = seq.replace("weren't", "were not")
-            seq = seq.replace("isn't", "is not")
-            seq = seq.replace("wasn't", "was not")
-            seq = seq.replace("haven't", "have not")
-            seq = seq.replace("hasn't", "has not")
-            seq = seq.replace("can't", "can not")
-            seq = seq.replace("cannot", "can not")
-
-            seq = seq.replace("shouldn't", "should not")
-            seq = seq.replace("wouldn't", "would not")
-            seq = seq.replace("couldn't", "could not")
-            seq = seq.replace("mightn't", "might not")
-            seq = seq.replace("mustn't", "must not")
-            seq = seq.replace("needn't", "need not")
-            seq = seq.replace("won't", "will not")
-
-
-
-            seq = seq.replace("'s", "")
-            seq = seq.replace("\n", "")
-            seq = seq.replace("[", "")
-            seq = seq.replace("]", "")
-            seq = seq.replace(" the ", " ")
-            seq = seq.replace(" a ", " ")
-            seq = seq.replace(" an ", " ")
-
-
-            seq = seq.replace("< i >", "")
-            seq = seq.replace("< / i >", "")
-
-            seq = re.sub(r'[,."''“”。、#()→⇒←↓↑:;_㊙️【《》=|/+<>]+', '', seq)
-            seq = re.sub(r'[-!?]+', ' ', seq)
-            seq = re.sub(r'[$]+', '$ ', seq)
-            seq = re.sub(r'[0-9]+', '<NUM>', seq)
-
-            seq_split = seq.split(" ")
-
-            new_seq = ""
-            for word in seq_split:
-                if not word in stopwords_en:
-                    new_seq += word
-                    new_seq += " "
-
-
-            with open('save/top_words.pickle', mode='rb') as f:
-                top_words = pickle.load(f)
-
-            # 高頻度top 20000語をのこす.
-            seq = new_seq
-            seq_split = seq.split(" ")
-            new_seq = ""
-            for word in seq_split:
-                if word in top_words:
-                    new_seq += word
-                    new_seq += " "
-
-            return new_seq
-
-        series = series.apply(clean_seq)
-        return series
-
-
-    def chinese_clean_series(series):
-        def clean_seq(seq):
-            seq = str(seq)
-            seq = seq.replace("< i >", "")
-            seq = seq.replace("< / i >", "")
-            seq = seq.replace("\n", "")
-            seq = re.sub(r'[,."''“”。、#()→⇒←↓↑:;_㊙️【《》=|/<>]+', '', seq)
-            seq = re.sub(r'[!！？?-]+', ' ', seq)
-            seq = re.sub(r'[$]+', '$ ', seq)
-            seq = re.sub(r'[0-9]+', '<NUM>', seq)
-
-            return seq
-
-        series = series.apply(clean_seq)
-        return series
+    #
+    # def english_clean_series(series):
+    #     # 大文字--->小文字
+    #     series = series.str.lower()
+    #
+    #     def clean_seq(seq):
+    #         ori = copy.copy(seq)
+    #
+    #         seq = seq.replace("it's", "it is")
+    #         seq = seq.replace("he's", "he is")
+    #         seq = seq.replace("she's", "she is")
+    #         seq = seq.replace("you're", "you are")
+    #         seq = seq.replace("we're", "we are")
+    #         seq = seq.replace("they're", "they are")
+    #         seq = seq.replace("i'm", "i am")
+    #         seq = seq.replace("don't", "do not")
+    #         seq = seq.replace("does't", "does not")
+    #         seq = seq.replace("didn't", "did not")
+    #         seq = seq.replace("aren't", "are not")
+    #         seq = seq.replace("weren't", "were not")
+    #         seq = seq.replace("isn't", "is not")
+    #         seq = seq.replace("wasn't", "was not")
+    #         seq = seq.replace("haven't", "have not")
+    #         seq = seq.replace("hasn't", "has not")
+    #         seq = seq.replace("can't", "can not")
+    #         seq = seq.replace("cannot", "can not")
+    #
+    #         seq = seq.replace("shouldn't", "should not")
+    #         seq = seq.replace("wouldn't", "would not")
+    #         seq = seq.replace("couldn't", "could not")
+    #         seq = seq.replace("mightn't", "might not")
+    #         seq = seq.replace("mustn't", "must not")
+    #         seq = seq.replace("needn't", "need not")
+    #         seq = seq.replace("won't", "will not")
+    #
+    #         seq = seq.replace("\n", "")
+    #
+    #         seq = seq.replace("< i >", "")
+    #         seq = seq.replace("< / i >", "")
+    #
+    #         seq = re.sub(r'[,."''“”。、#()→⇒←↓↑:;㊙️【《》=|/+<>]+', '', seq)
+    #         seq = re.sub(r'[!?]+', ' ', seq)
+    #         # seq = re.sub(r'[$]+', '$ ', seq)
+    #         # seq = re.sub(r'[0-9]+', '<NUM>', seq)
+    #
+    #         if len(seq)==0:
+    #             print("0 lengrh assert!!,",ori, seq)
+    #         return seq
+    #
+    #     series = series.apply(clean_seq)
+    #     return series
+    #
+    # def chinese_clean_series(series):
+    #     def clean_seq(seq):
+    #         seq = str(seq)
+    #         ori = copy.copy(seq)
+    #
+    #         seq = seq.replace("< i >", "")
+    #         seq = seq.replace("< / i >", "")
+    #         seq = seq.replace("\n", "")
+    #         seq = re.sub(r'[,."''“”。、#()→⇒←↓↑:;_㊙️【《》=|/<>]+', '', seq)
+    #         seq = re.sub(r'[!！？?-]+', ' ', seq)
+    #         seq = re.sub(r'[$]+', '$ ', seq)
+    #         # seq = re.sub(r'[0-9]+', '<NUM>', seq)
+    #
+    #         if len(seq)==0:
+    #             print("0 lengrh assert!!,",ori, seq)
+    #
+    #         return seq
+    #
+    #     series = series.apply(clean_seq)
+    #     return series
 
     train_df["title1_en"] = english_clean_series(train_df["title1_en"])
     train_df["title2_en"] = english_clean_series(train_df["title2_en"])
@@ -502,3 +639,10 @@ def preprocess_():
     return 0
 
     # return (train1_en, val1_en, train1_zh, val1_zh, train2_en, val2_en,train2_zh, val2_zh, y_train, y_val)
+
+if __name__ == "__main__":
+    # train_df = pd.read_csv("data/train.csv")
+    # train_df.replace('unrelated', 0, inplace=True)
+    # train_df.replace('agreed', 1, inplace=True)
+    # train_df.replace('disagreed', 2, inplace=True)
+    _ = preprocess_()
